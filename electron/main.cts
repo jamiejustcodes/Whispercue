@@ -156,7 +156,11 @@ else {
     })
     handle('answer', answer)
     handle('cancel-answer', id => {
-      if (active && active.id === id) active.controller.abort()
+      if (active && active.id === id) {
+        const canceled = active
+        active = undefined
+        canceled.controller.abort()
+      }
     })
     handle('copy', text => {
       if (typeof text === 'string' && text.length <= 64000) clipboard.writeText(text)

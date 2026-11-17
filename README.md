@@ -7,7 +7,7 @@ Whispercue is a Windows desktop app for asking a local model questions from a fl
 Use Windows x64 and Node.js 22.12 or newer within the supported LTS lines. Install [Ollama for Windows](https://docs.ollama.com/windows), run it, and pull a local chat model. The default model is a starting point that can be changed in Settings.
 
 ```powershell
-ollama pull qwen2.5:3b
+ollama pull qwen2.5:1.5b
 npm ci
 npm run build
 npm start
@@ -33,8 +33,8 @@ Before promoting a release, test the signed installer on a clean Windows x64 VM.
 | --- | --- |
 | Type checking, renderer build and Windows x64 NSIS packaging | Passed |
 | Install, open main window and uninstall on the development PC | Passed |
-| Packaged UI streaming and saved history | Passed with a deterministic local HTTP fixture |
-| Installer | 122,318,723 bytes, unsigned |
+| Packaged UI streaming, cancellation, disconnected-backend feedback and saved history | Passed with a deterministic local HTTP fixture |
+| Installer | Approximately 117 MiB, unsigned |
 | Signed update, clean VM, real model latency and audio tests | Open |
 
 The installed app exposed its main window in 1.08 seconds in one launch sample on the development PC. A 12-second idle sample recorded 351.8 MiB summed working set, 172.7 MiB private bytes, and 0.19 CPU-seconds across four Whispercue processes. This run used renderer accessibility for UI automation. The fixture was separate and the sample excludes inference resources.

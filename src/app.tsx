@@ -22,7 +22,7 @@ function App() {
   const [version, setVersion] = useState('')
   const [update, setUpdate] = useState<'idle' | 'checking' | 'ready'>('idle')
   const [updateStatus, setUpdateStatus] = useState('')
-  const [model, setModel] = useState(localStorage.getItem('model') || 'qwen2.5:3b')
+  const [model, setModel] = useState(localStorage.getItem('model') || 'qwen2.5:1.5b')
   const [theme, setTheme] = useState<Theme>((localStorage.getItem('theme') as Theme) || 'system')
   const [settings, setSettings] = useState(false)
   const [menu, setMenu] = useState(false)
@@ -134,7 +134,10 @@ function App() {
       await show('answer')
       await desktop.answer({ id, model, messages: next.slice(-24) })
     } catch (failure) {
-      if (requestId.current === id) setError(String(failure).replace(/^.*?Error: /, ''))
+      if (requestId.current === id) {
+        const message = String(failure).replace(/^(?:Error: )?(?:Error invoking remote method '[^']+': )?(?:Error: )?/, '')
+        setError(message)
+      }
     } finally {
       if (requestId.current === id) {
         requestId.current = undefined
