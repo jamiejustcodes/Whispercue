@@ -24,6 +24,9 @@
     "win": {
       "target": "nsis"
     },
+    "nsis": {
+      "artifactName": "Whispercue-Setup-${version}.${ext}"
+    },
     "publish": {
       "provider": "github",
       "owner": "jamiejustcodes",

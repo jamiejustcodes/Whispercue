@@ -23,7 +23,7 @@ The main process sends the current conversation to the Ollama-compatible chat en
 npm run package:windows
 ```
 
-The installer, block map and `latest.yml` are written to `release`. This command builds locally with publishing disabled. For signed builds, configure the Windows signing identity for electron-builder and verify that the installer and installed executable report a valid Authenticode signature. Keep signing credentials outside the repository.
+The installer, block map and `latest.yml` are written to `release`. The installer filename is `Whispercue-Setup-<version>.exe`. This command builds locally with publishing disabled. For signed builds, configure the Windows signing identity for electron-builder and verify that the installer and installed executable report a valid Authenticode signature. Keep signing credentials outside the repository.
 
 Before promoting a release, test the signed installer on a clean Windows x64 VM. For an update test, install an older signed build, publish the new installer, block map and `latest.yml` together to the GitHub Releases feed, then use **Settings → Check for updates**. Verify restart, publisher validation, version change, preference and history retention, and uninstall. Use a controlled test feed while validating release candidates.
 
@@ -34,9 +34,20 @@ Before promoting a release, test the signed installer on a clean Windows x64 VM.
 | Type checking, renderer build and Windows x64 NSIS packaging | Passed |
 | Install, open main window and uninstall on the development PC | Passed |
 | Packaged UI streaming, cancellation, disconnected-backend feedback and saved history | Passed with a deterministic local HTTP fixture |
+| Installed UI answer using the default local model in CPU mode | Passed |
+| Update manifest filename and installer SHA-512 | Matched |
 | Installer | Approximately 117 MiB, unsigned |
-| Signed update, clean VM, real model latency and audio tests | Open |
+| Signed update, clean VM, comparative end-to-end latency and audio tests | Open |
 
 The installed app exposed its main window in 1.08 seconds in one launch sample on the development PC. A 12-second idle sample recorded 351.8 MiB summed working set, 172.7 MiB private bytes, and 0.19 CPU-seconds across four Whispercue processes. This run used renderer accessibility for UI automation. The fixture was separate and the sample excludes inference resources.
+
+A local model trial used Ollama 0.40.16 in CPU mode on a Ryzen 7 3700X with 32 GiB RAM. It asked three synthetic questions per model, three times each with the model warm. The criteria checked a one-word instruction, recall of an owner and deadline, and an explicit unknown when the transcript omitted the answer.
+
+| Qwen2.5 Instruct, Q4_K_M | Warm passes | Median warm time to first text | First text with model cold |
+| --- | ---: | ---: | ---: |
+| 0.5B | 6/9 | 63 ms | 1,006 ms |
+| 1.5B | 9/9 | 102 ms | 1,541 ms |
+
+The 1.5B model is the default because it returned the requested fact without adding unrelated transcript details in this trial. These are loopback API timings. The separate CUDA trial reached a 90-second timeout on the first request. CPU mode completed the trial without a metered API. Electricity and hardware costs were outside the measurement.
 
 Audio capture, transcription, screen context, expanded settings and shortcut coverage remain open. Visual comparisons, display transitions, failure recovery and production benchmarks are required before release.
