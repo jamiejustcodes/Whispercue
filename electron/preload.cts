@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AnswerEvent, DesktopAPI } from './contract.cjs'
+import type { AnswerEvent, DesktopAPI, LiveStatus } from './contract.cjs'
 
 const desktop: DesktopAPI = {
   version: () => ipcRenderer.invoke('version'),
@@ -15,6 +15,15 @@ const desktop: DesktopAPI = {
     return () => ipcRenderer.off('answer-chunk', onChunk)
   },
   copy: text => ipcRenderer.invoke('copy', text),
+  startLive: options => ipcRenderer.invoke('live-start', options),
+  prepareLive: (options, model) => ipcRenderer.invoke('live-prepare', { options, model }),
+  stopLive: () => ipcRenderer.invoke('live-stop'),
+  transcribe: wav => ipcRenderer.invoke('live-transcribe', wav),
+  onLiveStatus(listener) {
+    const onStatus = (_event: Electron.IpcRendererEvent, status: LiveStatus) => listener(status)
+    ipcRenderer.on('live-status', onStatus)
+    return () => ipcRenderer.off('live-status', onStatus)
+  },
 }
 
 contextBridge.exposeInMainWorld('desktop', desktop)

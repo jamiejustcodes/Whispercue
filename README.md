@@ -1,10 +1,21 @@
 # Whispercue
 
-Whispercue is a Windows desktop app for asking a local model questions from a floating session window. The first development build streams answers, supports cancellation and copying, and saves recent conversations for search and review. Preferences and conversations live in the Windows user profile.
+Whispercue is a Windows desktop app for live conversation assistance. It transcribes microphone and system audio, samples the screen, and automatically streams suggestions into a floating session window. The models run on the user's PC. There is no hosted inference bill, subscription, or API key.
+
+## Start a live session
+
+1. Install and run Ollama for Windows. The app uses Ollama over loopback. [Ollama for Windows](https://docs.ollama.com/windows)
+2. On the dashboard, select **Microphone** and **System audio**. Leave **Screen context** set to **Live text**, then click **Set up live AI**. This downloads the pinned Windows x64 whisper.cpp runtime, English Whisper `base.en`, Silero VAD, and the Qwen2.5 1.5B answer model. Allow about 1.2 GB for the models and speech runtime, plus space for Ollama.
+3. Click **Start live session** and speak or play meeting audio. The overlay shows each source's status and a rolling transcript. Suggestions can appear after newly transcribed speech, with an 18-second minimum interval between automatic requests. Typed questions use the same context.
+4. Click **End live session** to stop capture and return to history. Whispercue saves text transcripts and answers in the Windows user profile. It keeps the latest screenshot in memory and uses it only as local inference context.
+
+Screen context samples the display under the pointer every 3.5 seconds. **Live text** runs local OCR on changed frames and gives the answer model the visible text. **Live vision** provides the latest screenshot directly to Qwen3‑VL 2B Instruct, which can interpret charts, images, and layout at a higher compute cost. Set up live AI again when switching models. Live vision uses about 2.2 GB for its model and speech runtime, plus space for Ollama. **Off** keeps live audio and suggestions active. **Text chat** accepts typed questions without capture.
+
+If GPU inference stalls, quit the running Ollama instance and start it from PowerShell with `$env:CUDA_VISIBLE_DEVICES = '-1'` and `$env:OLLAMA_VULKAN = '0'` set for that process. Screen-based suggestions may take longer on CPU. For an offline-only Ollama setup, enable its no-cloud setting. [Ollama FAQ](https://docs.ollama.com/faq)
 
 ## Run from source
 
-Use Windows x64 and Node.js 22.12 or newer within the supported LTS lines. Install [Ollama for Windows](https://docs.ollama.com/windows), run it, and pull a local chat model. The default model is a starting point that can be changed in Settings.
+Use Windows x64 and Node.js 22.12 or newer within the supported LTS lines. Start Ollama before setting up live AI. To use manual text chat, pull the default model below or choose an installed local model in Settings.
 
 ```powershell
 ollama pull qwen2.5:1.5b
@@ -50,4 +61,10 @@ A local model trial used Ollama 0.40.16 in CPU mode on a Ryzen 7 3700X with 32 G
 
 The 1.5B model is the default because it returned the requested fact without adding unrelated transcript details in this trial. These are loopback API timings. The separate CUDA trial reached a 90-second timeout on the first request. CPU mode completed the trial without a metered API. Electricity and hardware costs were outside the measurement.
 
-Audio capture, transcription, screen context, expanded settings and shortcut coverage remain open. Visual comparisons, display transitions, failure recovery and production benchmarks are required before release.
+The 0.1.0 measurements above predate the live capture pipeline. Review live performance separately with a representative meeting workload. Expanded settings, shortcuts, display transitions, and signed release verification remain open.
+
+## 0.2.0 live verification
+
+The installer passed install, first launch, session start and stop, and uninstall on the development PC. The microphone and system audio were active together. A synthetic question played through Windows produced a transcript about 1.2 seconds after playback and began an automatic suggestion about 2.4 seconds after playback. The answer contained a code shown only on a test screen. A short sample recorded about 2.6 GiB of private memory across Whispercue, Whisper, and Ollama.
+
+Both screen modes recovered the test code. The first CPU live-vision suggestion took about 27 seconds in its initial probe, so live text is the default. These are controlled runs on one PC. Microphone transcription accuracy, sustained meeting load, lower-spec hardware, and signed updates still need separate verification.

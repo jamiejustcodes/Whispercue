@@ -1,16 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { DesktopAPI, Message, View } from '../electron/contract.cjs'
+import type { DesktopAPI, LiveOptions, Message, ScreenMode, View } from '../electron/contract.cjs'
+import { messageOf, useLiveSession, type TranscriptEntry } from './use-live-session'
 import './style.css'
 
 declare global {
   interface Window { desktop: DesktopAPI }
 }
 
-type HistoryItem = { title: string; at: number; messages: Message[] }
+type HistoryItem = { title: string; at: number; messages: Message[]; transcript?: TranscriptEntry[] }
 type Theme = 'system' | 'dark' | 'light'
 const desktop = window.desktop
 const presets = ['Assist', 'What should I say?', 'Follow-up questions', 'Recap']
+
+function readCaptureOptions(): LiveOptions {
+  try {
+    const saved = JSON.parse(localStorage.getItem('capture-options') ?? '{}')
+    const screen = saved.screen === false || saved.screen === 'off' ? 'off' :
+      saved.screen === 'vision' ? 'vision' : 'text'
+    return { microphone: saved.microphone !== false, system: saved.system !== false, screen }
+  } catch {
+    return { microphone: true, system: true, screen: 'text' }
+  }
+}
 
 function readHistory(): HistoryItem[] {
   try { return JSON.parse(localStorage.getItem('history') ?? '[]') as HistoryItem[] }
@@ -33,7 +45,14 @@ function App() {
   const [query, setQuery] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const [busy, setBusy] = useState(false)
+  const [options, setOptions] = useState(readCaptureOptions)
+  const [showTranscript, setShowTranscript] = useState(true)
+  const [preparing, setPreparing] = useState(false)
+  const [setupNotice, setSetupNotice] = useState('')
+  const live = useLiveSession(desktop)
   const requestId = useRef<string | undefined>(undefined)
+  const lastSuggestion = useRef({ activity: 0, at: 0 })
+  const liveTranscript = useRef<HTMLDivElement>(null)
   const transcript = useRef<HTMLDivElement>(null)
   const settingsDialog = useRef<HTMLDialogElement>(null)
 
@@ -60,6 +79,23 @@ function App() {
   }, [messages])
 
   useEffect(() => {
+    if (liveTranscript.current) liveTranscript.current.scrollTop = liveTranscript.current.scrollHeight
+  }, [live.entries, showTranscript, view])
+
+  useEffect(() => {
+    if (live.phase !== 'live' || busy || requestId.current ||
+        live.activity <= lastSuggestion.current.activity) return
+    const activity = live.activity
+    const delay = Math.max(1100, lastSuggestion.current.at + 18_000 - Date.now())
+    const timer = setTimeout(() => {
+      if (requestId.current) return
+      lastSuggestion.current = { activity, at: Date.now() }
+      void send('Live suggestion', true)
+    }, delay)
+    return () => clearTimeout(timer)
+  }, [live.activity, live.phase, busy, view])
+
+  useEffect(() => {
     if (settings) settingsDialog.current?.showModal()
   }, [settings])
 
@@ -69,12 +105,41 @@ function App() {
     return desktop.setView(next)
   }
 
-  function startSession() {
+  function startSession(next: View = 'composer') {
     setMessages([])
     setError('')
     setPrompt('')
     setSelected(undefined)
-    void show('composer')
+    void show(next)
+  }
+
+  async function startLiveSession() {
+    setSetupNotice('')
+    lastSuggestion.current = { activity: 0, at: 0 }
+    setShowTranscript(true)
+    if (await live.start(options)) {
+      startSession('answer')
+    }
+  }
+
+  async function prepareLive() {
+    setPreparing(true)
+    setSetupNotice('Downloading local AI components…')
+    setError('')
+    try {
+      await desktop.prepareLive(options, model)
+      setSetupNotice('Local AI is ready. Start a live session when you’re ready.')
+    } catch (error) {
+      setSetupNotice('')
+      setError(messageOf(error))
+    } finally {
+      setPreparing(false)
+    }
+  }
+
+  function saveOptions(next: LiveOptions) {
+    setOptions(next)
+    localStorage.setItem('capture-options', JSON.stringify(next))
   }
 
   async function cancel() {
@@ -107,20 +172,26 @@ function App() {
   }
 
   async function stopSession() {
-    await cancel()
-    if (messages.length) {
-      const entry = { title: messages[0].content.slice(0, 100), at: Date.now(), messages }
+    const entries = live.phase === 'live' ? live.entries : []
+    await Promise.all([cancel(), live.stop()])
+    setError('')
+    if (messages.length || entries.length) {
+      const entry = {
+        title: (entries[0]?.text ?? messages[0].content).slice(0, 100),
+        at: Date.now(), messages, ...(entries.length ? { transcript: entries } : {}),
+      }
       const next = [entry, ...history].slice(0, 30)
-      localStorage.setItem('history', JSON.stringify(next))
+      while (next.length > 1 && JSON.stringify(next).length > 1_800_000) next.pop()
+      try { localStorage.setItem('history', JSON.stringify(next)) }
+      catch { setError('History storage is full. This session is available until the app closes.') }
       setHistory(next)
     }
     setMessages([])
-    setError('')
     setPrompt('')
     await show('dashboard')
   }
 
-  async function send(text: string) {
+  async function send(text: string, automatic = false) {
     text = text.trim()
     if (!text || requestId.current) return
     const next: Message[] = [...messages, { role: 'user', content: text }]
@@ -128,15 +199,23 @@ function App() {
     requestId.current = id
     setMessages(next)
     setError('')
-    setPrompt('')
+    if (!automatic) setPrompt('')
     setBusy(true)
     try {
-      await show('answer')
-      await desktop.answer({ id, model, messages: next.slice(-24) })
+      if (view !== 'answer' && !(automatic && view === 'widget')) await show('answer')
+      const context = live.entries.slice(-24).map(entry =>
+        `${entry.source === 'microphone' ? 'You' : 'System audio'}: ${entry.text}`).join('\n').slice(-5000)
+      const outgoing = next.slice(-24)
+      if (automatic) outgoing[outgoing.length - 1] = {
+        role: 'user',
+        content: 'Answer the latest spoken question directly using the supplied screen and transcript. '
+          + 'If there is no question, suggest one useful response, next step, or clarification. '
+          + 'Output one or two sentences.',
+      }
+      await desktop.answer({ id, model, messages: outgoing, liveContext: context, automatic })
     } catch (failure) {
       if (requestId.current === id) {
-        const message = String(failure).replace(/^(?:Error: )?(?:Error invoking remote method '[^']+': )?(?:Error: )?/, '')
-        setError(message)
+        setError(messageOf(failure))
       }
     } finally {
       if (requestId.current === id) {
@@ -144,6 +223,12 @@ function App() {
         setBusy(false)
       }
     }
+  }
+
+  function transcriptLines(items: TranscriptEntry[]) {
+    return items.map((entry, i) => <p key={i}>
+      <strong>{entry.source === 'microphone' ? 'You' : 'System'}</strong> {entry.text}
+    </p>)
   }
 
   function messageList(items: Message[]) {
@@ -164,6 +249,17 @@ function App() {
   if (view !== 'dashboard') {
     return <main className={`overlay ${view}`}>
       {view === 'answer' && <><button className="collapse icon" aria-label="Collapse overlay" onClick={() => void show('widget')}>×</button>
+        {live.phase === 'live' && <>
+          <div className="live-status" role="status">
+            <span>{`Mic ${live.sources.microphone} · System ${live.sources.system} · Screen ${live.screen}`}</span>
+            <button onClick={() => setShowTranscript(!showTranscript)} aria-expanded={showTranscript}>Transcript</button>
+            <button onClick={() => void stopSession()}>End live session</button>
+          </div>
+          {showTranscript && <div className="live-transcript" ref={liveTranscript} aria-label="Live transcript">
+            {live.entries.length ? transcriptLines(live.entries) : <p className="muted">Waiting for speech…</p>}
+          </div>}
+          {live.notice && <p role="alert" className="error">{live.notice}</p>}
+        </>}
         <div className="transcript" ref={transcript} aria-live="polite">
           {messageList(messages)}{busy && messages.at(-1)?.role === 'user' && <p className="muted">Thinking…</p>}
           {error && <p role="alert" className="error">{error}</p>}
@@ -175,7 +271,7 @@ function App() {
         <input aria-label="Ask Whispercue" placeholder="Ask about your conversation…" maxLength={16000} value={prompt}
           onChange={event => setPrompt(event.target.value)} />
         <div className="prompt-tools">
-          <span className="model" title={model}>Local</span>
+          <span className="model" title={model}>{live.phase === 'live' ? 'Live · Local' : 'Local'}</span>
           <button type="button" className="icon" aria-label="Session options" aria-expanded={menu} onClick={() => setMenu(!menu)}>···</button>
           {busy
             ? <button type="button" className="send" aria-label="Stop answer" onClick={() => void cancel()}>■</button>
@@ -206,11 +302,35 @@ function App() {
       <section className="banner">
         <div className="wrapper intro">
           <div><h1>Whispercue</h1><p className="muted">Local model · {model}</p></div>
-          <button className="primary start" onClick={startSession}>◈ Start Whispercue</button>
+          <div className="start-actions">
+            <button className="primary start" disabled={preparing || live.phase === 'starting' || !options.microphone && !options.system}
+              onClick={() => void startLiveSession()}>
+              {live.phase === 'starting' ? 'Starting…' : '◈ Start live session'}
+            </button>
+            <button onClick={() => startSession()} disabled={preparing || live.phase === 'starting'}>Text chat</button>
+          </div>
+        </div>
+        <div className="wrapper capture-options" role="group" aria-label="Live capture">
+          {(['microphone', 'system'] as const).map((source, index) =>
+            <label key={source}><input type="checkbox" checked={options[source]} disabled={preparing || live.phase === 'starting'}
+              onChange={event => saveOptions({ ...options, [source]: event.target.checked })} />
+              {['Microphone', 'System audio'][index]}</label>)}
+          <label>Screen context <select value={options.screen} disabled={preparing || live.phase === 'starting'}
+            onChange={event => saveOptions({ ...options, screen: event.target.value as ScreenMode })}>
+            <option value="text">Live text</option>
+            <option value="vision">Live vision</option>
+            <option value="off">Off</option>
+          </select></label>
+          <button className="setting-button" onClick={() => void prepareLive()} disabled={preparing || live.phase === 'starting'}>Set up live AI</button>
+          {setupNotice && <p role="status" className="setup-notice muted">{setupNotice}</p>}
+          {live.notice && <p role="alert" className="error">{live.notice}</p>}
+          {error && <p role="alert" className="error">{error}</p>}
         </div>
       </section>
       <section className="wrapper history">
-        {selected ? <><h2>{selected.title}</h2>{messageList(selected.messages)}</> : <>
+        {selected ? <><h2>{selected.title}</h2>
+          {selected.transcript && <div className="live-transcript">{transcriptLines(selected.transcript)}</div>}
+          {messageList(selected.messages)}</> : <>
           <h2>Sessions</h2>
           {!filtered.length && <p className="muted">{query ? 'No matching sessions.' : 'No sessions yet.'}</p>}
           {filtered.map((item, i) =>

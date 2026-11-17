@@ -1,6 +1,6 @@
 {
   "name": "whispercue",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A Windows desktop session assistant",
   "author": "jamiejustcodes",
   "private": true,
@@ -34,9 +34,11 @@
     }
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
     "electron-updater": "6.8.11",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
     "@types/node": "26.6.6",
