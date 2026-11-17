@@ -1,0 +1,47 @@
+{
+  "name": "whispercue",
+  "version": "0.1.0",
+  "description": "A Windows desktop session assistant",
+  "author": "jamiejustcodes",
+  "private": true,
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.electron.json && tsc -p tsconfig.json && vite build",
+    "start": "electron .",
+    "package:windows": "npm run build && electron-builder --win nsis --x64 --publish never"
+  },
+  "build": {
+    "appId": "com.jamiejustcodes.whispercue",
+    "productName": "Whispercue",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "jamiejustcodes",
+      "repo": "Whispercue"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "electron": "45.3.3",
+    "electron-builder": "26.18.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.8"
+  }
+}
